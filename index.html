@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>사립유치원 현금출납부 목별 검토 도구</title>
+  <title>사립유치원 현금출납부 검토</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <header class="site-header">
     <div>
       <p class="eyebrow">Client-side audit helper</p>
-      <h1>사립유치원 현금출납부 목별 검토 도구</h1>
+      <h1>사립유치원 현금출납부 검토</h1>
       <p class="lead">현금출납부(.xlsx)를 브라우저에서만 읽어 2026 사립유치원 예·결산 및 적립금 업무처리 지침 기준의 목 부적정 의심 항목을 선별합니다.</p>
     </div>
   </header>
@@ -18,7 +18,7 @@
   <main class="container">
     <section class="notice">
       <strong>검토 범위</strong>
-      <span>이 도구는 제목·적요·세부항목명을 기준으로 의심 항목을 자동 선별합니다. 최종 지적 여부는 품의서, 지출결의서, 계약·납품·검수 증빙을 함께 확인해야 합니다.</span>
+      <span>제목·적요·세부항목명을 기준으로 의심 항목을 자동 선별합니다. 최종 지적 여부는 품의서, 지출결의서, 기타 증빙서류를 함께 확인해야 합니다.</span>
     </section>
 
     <section class="grid two">
@@ -26,11 +26,11 @@
         <h2>1. 파일 업로드</h2>
         <label class="file-box">
           <span class="file-title">현금출납부 Excel</span>
-          <span class="file-desc">.xlsx 또는 .xls 파일을 선택하세요.</span>
+          <span class="file-desc">.xlsx 또는 .xls 파일을 업로드하세요.</span>
           <input id="cashbookFile" type="file" accept=".xlsx,.xls" />
         </label>
-        <button id="runBtn" class="primary" disabled>검토 실행</button>
-        <p id="status" class="status">현금출납부 파일을 선택하면 검토를 실행할 수 있습니다.</p>
+        <button id="runBtn" class="primary" disabled>검토 시작</button>
+        <p id="status" class="status">검토 시작 버튼을 눌러주세요.</p>
       </article>
 
       <article class="card">
@@ -42,7 +42,7 @@
     <section class="summary card" id="summaryCard" hidden>
       <h2>3. 검토 결과 요약</h2>
       <div class="kpis">
-        <div><span id="totalRows">0</span><small>검토 거래</small></div>
+        <div><span id="totalRows">0</span><small>전체 항목</small></div>
         <div><span id="flagRows">0</span><small>의심·확인 항목</small></div>
         <div><span id="amountTotal">0</span><small>대상금액</small></div>
       </div>
@@ -55,7 +55,7 @@
     <section class="card" id="tableCard" hidden>
       <div class="table-heading">
         <h2>4. 상세 목록</h2>
-        <input id="filterInput" type="search" placeholder="검색: 제목, 현재 목, 권장 목" />
+        <input id="filterInput" type="search" placeholder="검색: " />
       </div>
       <div class="view-tabs" aria-label="검토 결과 보기 선택">
         <button type="button" class="tab active" data-view="all">전체 <span class="tab-count">0</span></button>
