@@ -108,9 +108,13 @@ function rowToObject(row, headers, sheetName, rowNumber) {
 function mapCashbookRow(raw) {
   const headers = Object.keys(raw);
   const get = (...patterns) => getField(raw, headers, patterns);
-  const income = parseAmount(get("수입금액", "수입", "입금", "차변"));
-  const expense = parseAmount(get("지출금액", "지출", "출금", "대변"));
-  const genericAmount = parseAmount(get("금액", "거래금액", "결의금액"));
+  const getAmount = (...patterns) => getAmountField(raw, headers, patterns);
+
+  // 금액 열은 일반 텍스트 열과 별도로 탐색합니다.
+  // 예: "납입금명" 열의 "특성화비[3월]"이 "입금" 패턴에 걸려 금액 3으로 파싱되는 문제를 방지합니다.
+  const income = parseAmount(getAmount("수입액", "수입금액", "입금액", "수납액", "차변금액", "차변"));
+  const expense = parseAmount(getAmount("지출액", "지출금액", "출금액", "지급액", "대변금액", "대변"));
+  const genericAmount = parseAmount(getAmount("거래금액", "결의금액", "금액"));
 
   const typeText = String(get("수입지출", "구분", "결의구분", "수지구분") || "");
   let type = "";
@@ -150,6 +154,49 @@ function getField(raw, headers, patterns) {
     });
     return { header, score };
   }).filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+  if (!scored.length) return "";
+  return raw[scored[0].header];
+}
+
+function getAmountField(raw, headers, patterns) {
+  const normalizedPatterns = patterns.map(normalize);
+
+  const blockedHeaderWords = [
+    "납입금명", "납부금명", "납입명", "납부명", "항목명", "과목명",
+    "비목", "목", "세목", "세부항목", "제목", "적요", "내용",
+    "회계연도", "연도", "월", "분기", "학기", "결의번호", "코드", "명"
+  ].map(normalize);
+
+  const amountHeaderHints = [
+    "금액", "수입액", "지출액", "입금액", "출금액", "수납액", "지급액",
+    "결의금액", "거래금액", "차변", "대변", "잔액"
+  ].map(normalize);
+
+  const scored = headers.map(header => {
+    const nh = normalize(header);
+    const rawValue = raw[header];
+    let score = 0;
+
+    // 금액 열 후보가 아닌 설명/항목명 열은 제외합니다.
+    if (blockedHeaderWords.some(word => nh === word || nh.includes(word))) {
+      return { header, score: -1 };
+    }
+
+    normalizedPatterns.forEach(pattern => {
+      if (nh === pattern) score += 120;
+      else if (nh.includes(pattern)) score += 45 + pattern.length;
+      else if (pattern.includes(nh) && nh.length > 1) score += 15;
+    });
+
+    // 금액 성격의 열명에 가산점
+    if (amountHeaderHints.some(word => nh.includes(word))) score += 20;
+
+    // 값 자체도 금액처럼 보일 때만 후보로 남깁니다.
+    if (!looksLikeAmount(rawValue)) score -= 50;
+
+    return { header, score };
+  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+
   if (!scored.length) return "";
   return raw[scored[0].header];
 }
@@ -292,6 +339,17 @@ function accountMatches(expected, currentNorm) {
 
 function containsAny(text, words) {
   return words.some(word => text.includes(normalize(word)));
+}
+
+function looksLikeAmount(value) {
+  if (typeof value === "number") return Number.isFinite(value);
+  const original = String(value || "").trim();
+  if (!original) return false;
+  const compact = original.replace(/\s+/g, "");
+  if (/^[-+]?\d{1,3}(,\d{3})+(\.\d+)?원?$/.test(compact)) return true;
+  if (/^[-+]?\d+(\.\d+)?원?$/.test(compact)) return true;
+  if (/^[-+]?\d+(\.\d+)?e[-+]?\d+$/i.test(compact)) return true;
+  return false;
 }
 
 function parseAmount(value) {
