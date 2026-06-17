@@ -296,8 +296,20 @@ function containsAny(text, words) {
 
 function parseAmount(value) {
   if (typeof value === "number") return Math.abs(value);
-  const text = String(value || "").replace(/,/g, "").replace(/원/g, "").trim();
-  if (!text) return 0;
+
+  const original = String(value || "").trim();
+  if (!original) return 0;
+
+  // 금액 열이 아닌 기간/월분 열을 금액으로 오인하지 않도록 방지합니다.
+  // 예: "3월", "3 월", "2026년 3월", "1학기", "2분기" 등은 3, 20263처럼 파싱하면 안 됩니다.
+  const compact = original.replace(/\s+/g, "");
+  if (/^\d{1,2}월$/.test(compact)) return 0;
+  if (/^\d{4}년\d{1,2}월$/.test(compact)) return 0;
+  if (/^\d{1,2}월분$/.test(compact)) return 0;
+  if (/^\d{1,2}분기$/.test(compact)) return 0;
+  if (/^\d{1,2}학기$/.test(compact)) return 0;
+
+  const text = original.replace(/,/g, "").replace(/원/g, "").trim();
   const n = Number(text.replace(/[^0-9.-]/g, ""));
   return Number.isFinite(n) ? Math.abs(n) : 0;
 }
