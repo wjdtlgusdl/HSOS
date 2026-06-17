@@ -7,11 +7,13 @@ const tbody = document.querySelector("#resultTable tbody");
 const filterInput = document.getElementById("filterInput");
 const downloadBtn = document.getElementById("downloadBtn");
 const downloadCsvBtn = document.getElementById("downloadCsvBtn");
+const viewTabs = document.querySelectorAll("[data-view]");
 
 const state = {
   cashbookFile: null,
   parsedRows: [],
-  resultRows: []
+  resultRows: [],
+  activeView: "all"
 };
 
 cashbookInput.addEventListener("change", () => {
@@ -23,6 +25,13 @@ runBtn.addEventListener("click", runAudit);
 filterInput.addEventListener("input", () => renderTable(state.resultRows));
 downloadBtn.addEventListener("click", downloadXlsx);
 downloadCsvBtn.addEventListener("click", downloadCsv);
+viewTabs.forEach(btn => {
+  btn.addEventListener("click", () => {
+    state.activeView = btn.dataset.view || "all";
+    viewTabs.forEach(b => b.classList.toggle("active", b === btn));
+    renderTable(state.resultRows);
+  });
+});
 
 function updateReadyState() {
   runBtn.disabled = !state.cashbookFile;
@@ -38,12 +47,10 @@ async function runAudit() {
     statusEl.textContent = "현금출납부를 읽는 중입니다...";
     state.parsedRows = await parseCashbook(state.cashbookFile);
     statusEl.textContent = `${state.parsedRows.length.toLocaleString()}건을 읽었습니다. 제목 기준 검토 중입니다...`;
-    state.resultRows = state.parsedRows
-      .map(analyzeRow)
-      .filter(Boolean);
+    state.resultRows = postProcessCorrections(state.parsedRows);
     renderSummary();
     renderTable(state.resultRows);
-    statusEl.textContent = `검토 완료: ${state.resultRows.length.toLocaleString()}건이 의심·확인 대상으로 선별되었습니다.`;
+    statusEl.textContent = `검토 완료: ${state.resultRows.length.toLocaleString()}건이 의심·확인 대상으로 선별되었습니다. [과오납반환결의]와 과목경정 완료 건은 지적 목록에서 제외했습니다.`;
   } catch (err) {
     console.error(err);
     statusEl.textContent = `검토 중 오류가 발생했습니다: ${err.message || err}`;
@@ -138,6 +145,9 @@ function mapCashbookRow(raw) {
     currentAccount: String(currentAccount || "").trim(),
     title: cleanText(titleParts.join(" / ")),
     amount: expense || income || Math.abs(genericAmount) || 0,
+    normalizedTitle: normalizeCorrectionTitle(titleParts.join(" / ")),
+    isCorrection: isCorrectionTitle(titleParts.join(" / ")),
+    isOverpaymentRefund: isOverpaymentRefundTitle(titleParts.join(" / ")),
     raw
   };
 }
@@ -201,10 +211,59 @@ function getAmountField(raw, headers, patterns) {
   return raw[scored[0].header];
 }
 
+function isOverpaymentRefundTitle(value) {
+  const text = normalize(value);
+  return [
+    "과오납반환결의",
+    "과오납반환",
+    "과오납환불",
+    "과오납반환결의서"
+  ].some(word => text.includes(normalize(word)));
+}
+
+function isCorrectionTitle(value) {
+  const text = normalize(value);
+  return ["과목경정", "목경정", "경정"].some(word => text.includes(normalize(word)));
+}
+
+function normalizeCorrectionTitle(value) {
+  return normalize(value)
+    .replaceAll("과목경정", "")
+    .replaceAll("목경정", "")
+    .replaceAll("경정", "")
+    .replaceAll("수입결의", "")
+    .replaceAll("지출결의", "");
+}
+
+function postProcessCorrections(rows) {
+  const correctionRows = rows.filter(row => row.isCorrection && !row.isOverpaymentRefund);
+  const flagged = rows
+    .filter(row => !row.isOverpaymentRefund && !row.isCorrection)
+    .map(analyzeRow)
+    .filter(Boolean);
+
+  return flagged.filter(result => {
+    const titleKey = normalizeCorrectionTitle(result.제목적요);
+    const amount = Number(result.금액 || 0);
+    const hasMatchingCorrection = correctionRows.some(row => {
+      if (Number(row.amount || 0) !== amount) return false;
+      const correctionTitle = row.normalizedTitle || normalizeCorrectionTitle(row.title);
+      const titleMatches = correctionTitle.includes(titleKey) || titleKey.includes(correctionTitle);
+      if (!titleMatches) return false;
+      // 과목경정 후 현재 목이 권장·확인 목 계열이면 완료된 경정으로 봅니다.
+      const correctionAccount = normalize(row.currentAccount);
+      return accountMatches(result.권장확인목, correctionAccount) || !correctionAccount;
+    });
+    return !hasMatchingCorrection;
+  });
+}
+
 function analyzeRow(row) {
   const targetType = row.type.includes("지출") ? "expense" : (row.type.includes("수입") ? "income" : "both");
   const text = normalize(`${row.title} ${row.currentAccount}`);
   const currentNorm = normalize(row.currentAccount);
+
+
   let best = null;
 
   for (const rule of AUDIT_RULES) {
@@ -263,20 +322,28 @@ function analyzeRow(row) {
 function renderSummary() {
   summaryCard.hidden = false;
   tableCard.hidden = false;
-  const total = state.parsedRows.length;
+  const total = state.parsedRows.filter(row => !row.isOverpaymentRefund).length;
   const flagged = state.resultRows.length;
   const amount = state.resultRows.reduce((sum, row) => sum + Number(row.금액 || 0), 0);
+  const incomeCount = state.resultRows.filter(row => row.구분.includes("수입")).length;
+  const expenseCount = state.resultRows.filter(row => row.구분.includes("지출")).length;
+  const warnCount = state.resultRows.filter(row => row.판단구분.includes("부적정")).length;
   document.getElementById("totalRows").textContent = total.toLocaleString();
   document.getElementById("flagRows").textContent = flagged.toLocaleString();
   document.getElementById("amountTotal").textContent = `${amount.toLocaleString()}원`;
+  setTabCount("all", flagged);
+  setTabCount("income", incomeCount);
+  setTabCount("expense", expenseCount);
+  setTabCount("warn", warnCount);
 }
 
 function renderTable(rows) {
   const keyword = normalize(filterInput.value || "");
+  const filteredByView = filterRowsByView(rows, state.activeView);
   const visible = keyword
-    ? rows.filter(row => normalize(Object.values(row).join(" ")).includes(keyword))
-    : rows;
-  tbody.innerHTML = visible.map(row => `
+    ? filteredByView.filter(row => normalize(Object.values(row).join(" ")).includes(keyword))
+    : filteredByView;
+  tbody.innerHTML = visible.length ? visible.map(row => `
     <tr>
       <td>${escapeHtml(row.원본행)}</td>
       <td>${escapeHtml(row.일자)}</td>
@@ -288,7 +355,19 @@ function renderTable(rows) {
       <td>${escapeHtml(row.권장확인목)}</td>
       <td>${escapeHtml(row.검토의견)}</td>
     </tr>
-  `).join("");
+  `).join("") : `<tr><td colspan="9" class="empty">표시할 검토 결과가 없습니다.</td></tr>`;
+}
+
+function filterRowsByView(rows, view) {
+  if (view === "income") return rows.filter(row => row.구분.includes("수입"));
+  if (view === "expense") return rows.filter(row => row.구분.includes("지출"));
+  if (view === "warn") return rows.filter(row => row.판단구분.includes("부적정"));
+  return rows;
+}
+
+function setTabCount(view, count) {
+  const el = document.querySelector(`[data-view="${view}"] .tab-count`);
+  if (el) el.textContent = Number(count || 0).toLocaleString();
 }
 
 function badge(value) {

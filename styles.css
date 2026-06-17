@@ -110,3 +110,36 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 24px 36px; color: var(--m
   .table-heading { flex-direction: column; align-items: stretch; }
   #filterInput { min-width: 0; width: 100%; }
 }
+.view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.tab {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  color: #374151;
+  padding: 9px 12px;
+}
+.tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.tab-count {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(31, 41, 55, 0.08);
+  font-size: 12px;
+}
+.tab.active .tab-count {
+  background: rgba(255, 255, 255, 0.2);
+}
+.empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 24px !important;
+}
