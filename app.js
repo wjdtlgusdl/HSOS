@@ -50,7 +50,7 @@ async function runAudit() {
     state.resultRows = postProcessCorrections(state.parsedRows);
     renderSummary();
     renderTable(state.resultRows);
-    statusEl.textContent = `검토 완료: ${state.resultRows.length.toLocaleString()}건이 의심·확인 대상으로 선별되었습니다. [과오납반환결의]와 과목경정 완료 건은 지적 목록에서 제외했습니다.`;
+    statusEl.textContent = `검토 완료: ${state.resultRows.length.toLocaleString()}건이 의심·확인 대상으로 선별되었습니다. 허용 비목 예외, [과오납반환결의], 과목경정 완료 건은 결과에서 제외했습니다.`;
   } catch (err) {
     console.error(err);
     statusEl.textContent = `검토 중 오류가 발생했습니다: ${err.message || err}`;
@@ -263,6 +263,9 @@ function analyzeRow(row) {
   const text = normalize(`${row.title} ${row.currentAccount}`);
   const currentNorm = normalize(row.currentAccount);
 
+  // 허용 비목 예외 규칙에 해당하면 지적하지 않습니다.
+  // 예: 방과후간식비가 급식·간식비 계열에서 집행된 경우, 교직원 급식비가 인건비 계열에서 집행된 경우 등
+  if (isAllowedByContext(row, targetType)) return null;
 
   let best = null;
 
@@ -408,6 +411,24 @@ function summarizeResults(rows) {
     groups.set(key, current);
   }
   return Array.from(groups.values());
+}
+
+function isAllowedByContext(row, targetType) {
+  const rules = window.ACCOUNT_ALLOW_RULES || [];
+  const text = normalize(`${row.title} ${row.currentAccount}`);
+  const titleText = normalize(row.title);
+  const currentNorm = normalize(row.currentAccount);
+  if (!currentNorm) return false;
+
+  return rules.some(rule => {
+    if (!(rule.type === "both" || rule.type === targetType)) return false;
+    const any1 = rule.keywordsAny || [];
+    const any2 = rule.keywordsAny2 || [];
+    const hit1 = !any1.length || any1.some(word => titleText.includes(normalize(word)) || text.includes(normalize(word)));
+    const hit2 = !any2.length || any2.some(word => titleText.includes(normalize(word)) || text.includes(normalize(word)));
+    if (!hit1 || !hit2) return false;
+    return (rule.allowedAccounts || []).some(word => currentNorm.includes(normalize(word)));
+  });
 }
 
 function accountMatches(expected, currentNorm) {
